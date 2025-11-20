@@ -1,0 +1,61 @@
+# Data Cleaning – Customer Complaint Intelligence System
+
+## Overview
+This document details the pre-SQL data cleaning performed in Excel to standardize text fields, correct spelling errors, and handle invalid dates. Cleaned datasets were then imported into SQL Server for modeling and analysis.
+
+---
+
+## 1. Customers Table
+
+**Standardized Regions and Corrected Invalid Entries**
+
+| Original Value | Replacement       | Count |
+|----------------|-----------------|-------|
+| Latam          | Latin America   | 74    |
+| Middleeast     | Middle-East     | 52    |
+| Na             | North America   | 53    |
+| Africa         | Africa          | 58    |
+| Eu             | Europe          | 53    |
+| invalid_date   | NULL            | 80    |
+
+---
+
+## 2. Resolutions Table
+
+**Fixed Typographical Errors in Resolution Descriptions**
+
+| Original Value         | Replacement        | Count |
+|------------------------|-----------------|-------|
+| Work in Progress       | Work in Progress | 14,197 |
+| Biling System          | Billing System   | 176    |
+
+---
+
+## 3. Complaints Table
+
+**Corrected Invalid Dates and Spelling Errors**
+
+| Original Value | Replacement | Count |
+|----------------|------------|-------|
+| invalid_date   | NULL       | 303   |
+| sycn           | sync       | 103   |
+| Biling         | Billing    | 5,955 |
+
+---
+
+## 4. Row Counts Post-Cleaning
+
+| Table       | Rows    |
+|-------------|--------|
+| Complaints  | 50,000 |
+| Resolutions | 39,846 |
+| Customers   | 10,000 |
+
+---
+
+## 5. Notes
+
+- Standardizing regions ensures accurate reporting and prevents fragmentation in dashboards.  
+- Fixing spelling errors in complaints and resolutions enables reliable keyword-based sentiment scoring and urgency evaluation.  
+- Invalid dates set to `NULL` allow correct time-based aggregations in SQL, such as risk scoring and complaint aging.  
+- All cleaning steps were documented for traceability and reproducibility.
