@@ -1,0 +1,358 @@
+-- ========================================================================
+-- DAX MEASURES LIBRARY
+-- ========================================================================
+-- Purpose: Power BI measures for complaint intelligence dashboard
+-- Data Model: customer_intelligence (fact), customer_risk (fact)
+-- Author: Adeayo Adewale
+-- Last Modified: 2025
+-- ========================================================================
+
+-- ========================================================================
+-- SECTION 1: CORE COMPLAINT METRICS
+-- ========================================================================
+-- Purpose: Foundational measures for total complaint counts by urgency level
+-- Usage: Executive overview cards, trend analysis, filtering
+
+-- Measure: Total Complaints
+-- Purpose: Count all valid complaints with proper date validation
+-- Returns: Integer count of distinct complaint IDs
+-- Used by: Multiple percentage calculations, baseline metrics
+Total Complaints = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[complaint_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    'customer_intelligence'[signup_date] <= TODAY(),
+    NOT(ISBLANK('customer_intelligence'[complaint_id])),
+    NOT(ISBLANK('customer_intelligence'[complaint_date])),
+    NOT(ISBLANK('customer_intelligence'[signup_date]))
+)
+
+-- Measure: High Urgency Complaints
+-- Purpose: Count complaints marked as high urgency
+-- Business Context: Critical issues requiring immediate attention
+-- Returns: Integer count
+High Urgency Complaints = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[complaint_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    'customer_intelligence'[signup_date] <= TODAY(),
+    'customer_intelligence'[urgency] = "High",
+    NOT(ISBLANK('customer_intelligence'[complaint_id])),
+    NOT(ISBLANK('customer_intelligence'[complaint_date])),
+    NOT(ISBLANK('customer_intelligence'[signup_date]))
+)
+
+-- Measure: Medium Urgency Complaints
+-- Purpose: Count complaints marked as medium urgency
+-- Business Context: Important issues requiring timely resolution
+-- Returns: Integer count
+Medium Urgency Complaints = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[complaint_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    'customer_intelligence'[signup_date] <= TODAY(),
+    'customer_intelligence'[urgency] = "Medium",
+    NOT(ISBLANK('customer_intelligence'[complaint_id])),
+    NOT(ISBLANK('customer_intelligence'[complaint_date])),
+    NOT(ISBLANK('customer_intelligence'[signup_date]))
+)
+
+-- Measure: Low Urgency Complaints
+-- Purpose: Count complaints marked as low urgency
+-- Business Context: Non-critical issues with flexible resolution timeline
+-- Returns: Integer count
+Low Urgency Complaints = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[complaint_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    'customer_intelligence'[signup_date] <= TODAY(),
+    'customer_intelligence'[urgency] = "Low",
+    NOT(ISBLANK('customer_intelligence'[complaint_id])),
+    NOT(ISBLANK('customer_intelligence'[complaint_date])),
+    NOT(ISBLANK('customer_intelligence'[signup_date]))
+)
+
+-- Measure: % High-Urgency Complaints
+-- Purpose: Calculate percentage of total complaints that are high urgency
+-- Business Context: KPI for monitoring critical issue volume
+-- Returns: Decimal (0 to 1), formatted as percentage in visuals
+-- Dependencies: [High Urgency Complaints], [Total Complaints]
+% High-Urgency Complaints = 
+DIVIDE(
+    [High Urgency Complaints], 
+    [Total Complaints], 
+    0
+)
+
+-- ========================================================================
+-- SECTION 2: RESOLUTION METRICS
+-- ========================================================================
+-- Purpose: Track complaint resolution performance and status
+-- Usage: Operational dashboards, agent performance tracking
+
+-- Measure: Resolved Complaints
+-- Purpose: Count complaints with non-open resolution status
+-- Business Logic: Excludes complaints still marked as "Open"
+-- Returns: Integer count
+Resolved Complaints = 
+CALCULATE(
+    COUNTROWS('customer_intelligence'),
+    'customer_intelligence'[resolution_status] <> "Open",
+    'customer_intelligence'[signup_date] <= TODAY(),
+    'customer_intelligence'[complaint_date] <= TODAY()
+)
+
+-- Measure: Unresolved Complaints
+-- Purpose: Count complaints that have not been closed
+-- Business Logic: Excludes complaints marked as "Closed"
+-- Returns: Integer count
+Unresolved Complaints = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[complaint_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    NOT(ISBLANK('customer_intelligence'[complaint_date])),
+    'customer_intelligence'[resolution_status] <> "Closed",
+    'customer_intelligence'[signup_date] <= TODAY(),
+    NOT(ISBLANK('customer_intelligence'[signup_date]))
+)
+
+-- Measure: Resolution Rate %
+-- Purpose: Calculate percentage of complaints successfully resolved
+-- Business Context: Primary KPI for operational efficiency
+-- Returns: Decimal (0 to 1), formatted as percentage in visuals
+-- Target: 80% or higher
+-- Dependencies: [Resolved Complaints], [Total Complaints]
+Resolution Rate % = 
+DIVIDE(
+    [Resolved Complaints], 
+    [Total Complaints], 
+    0
+)
+
+-- Measure: Average Resolution Time
+-- Purpose: Calculate mean days to resolve complaints
+-- Business Logic: 
+--   - Only includes resolved complaints (resolution_time > 0)
+--   - Excludes open/pending complaints
+--   - Filters out invalid dates (future dates)
+-- Returns: Decimal (days)
+-- Note: Resolution time column calculated in SQL as DATEDIFF(complaint_date, resolution_date)
+Average Resolution Time = 
+CALCULATE(
+    AVERAGE('customer_intelligence'[resolution_time]),
+    
+    -- Date validation: Ensure dates are on or before today
+    'customer_intelligence'[signup_date] <= TODAY(),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    
+    -- Status filter: Only include valid resolution times
+    -- This excludes open complaints (where resolution_time is NULL or 0)
+    'customer_intelligence'[resolution_time] > 0
+    
+    -- Note: Filtering resolution_time > 0 implicitly handles BLANK values
+    -- since BLANK is not greater than 0
+)
+
+-- ========================================================================
+-- SECTION 3: CUSTOMER RISK METRICS
+-- ========================================================================
+-- Purpose: Identify and track at-risk customers for churn prevention
+-- Data Source: customer_risk table (generated from SQL view)
+
+-- Measure: High-Risk Customers
+-- Purpose: Count customers identified as high-risk in the risk model
+-- Business Context: Customers with risk_score > 0.5 in SQL view
+-- Returns: Integer count
+-- Note: customer_risk table is dynamically populated; may be empty if no customers meet threshold
+High-Risk Customers = 
+COUNTROWS('customer_risk')
+
+-- Measure: New Customers
+-- Purpose: Count customers who signed up within last 30 days
+-- Business Context: New customers have higher complaint/churn risk
+-- Returns: Integer count
+-- Logic: is_new_customer flag calculated in SQL view
+New Customers = 
+CALCULATE(
+    COUNT('customer_risk'[customer_id]),
+    'customer_risk'[is_new_customer] = 1
+)
+
+-- Measure: % of Customer Base At Risk
+-- Purpose: Calculate percentage of total complaints from high-risk customers
+-- Business Context: Monitors concentration of problems in at-risk segment
+-- Returns: Decimal (0 to 1), formatted as percentage
+-- Dependencies: [High-Risk Customers], [Total Complaints]
+-- Note: Denominator uses Total Complaints rather than total customer base
+--       to show risk concentration in complaint volume
+% of Customer Base At Risk = 
+DIVIDE(
+    [High-Risk Customers], 
+    [Total Complaints], 
+    0
+)
+
+-- ========================================================================
+-- SECTION 4: CUSTOMER BEHAVIOR METRICS
+-- ========================================================================
+-- Purpose: Analyze customer complaint patterns and engagement
+
+-- Measure: Customers Base
+-- Purpose: Count total distinct customers in dataset
+-- Returns: Integer count
+-- Used by: Complaint rate, repeat complaint percentage calculations
+Customers Base = 
+DISTINCTCOUNT('customer_intelligence'[customer_id])
+
+-- Measure: Customers who complained
+-- Purpose: Count distinct customers who filed at least one complaint
+-- Returns: Integer count
+-- Used by: Complaint rate calculation
+Customers who complained = 
+CALCULATE(
+    DISTINCTCOUNT('customer_intelligence'[customer_id]),
+    'customer_intelligence'[complaint_date] <= TODAY(),
+    'customer_intelligence'[signup_date] <= TODAY()
+)
+
+-- Measure: Complaint Rate
+-- Purpose: Calculate percentage of customer base that has complained
+-- Business Context: Measures product quality and customer satisfaction breadth
+-- Returns: Decimal (0 to 1), formatted as percentage
+-- Dependencies: [Customers who complained], [Customers Base]
+Complaint Rate = 
+DIVIDE(
+    [Customers who complained], 
+    [Customers Base], 
+    0
+)
+
+-- Measure: Repeat Complaints Customers
+-- Purpose: Count customers with more than one complaint
+-- Business Context: Identifies customers with recurring issues (higher churn risk)
+-- Returns: Integer count
+-- Logic: Uses virtual tables to group by customer and filter for count > 1
+-- Dependencies: None (self-contained calculation)
+Repeat Complaints Customers = 
+VAR CustomersWithComplaintCounts =
+    -- Step 1: Create virtual table grouped by customer_id with complaint counts
+    SUMMARIZECOLUMNS(
+        'customer_intelligence'[customer_id],
+        
+        -- Apply date filters in table context before counting
+        FILTER(
+            'customer_intelligence',
+            'customer_intelligence'[signup_date] <= TODAY() &&
+            'customer_intelligence'[complaint_date] <= TODAY()
+        ),
+        
+        -- Calculate total complaints per customer
+        "TotalComplaints", COUNT('customer_intelligence'[complaint_id])
+    )
+
+VAR RepeatCustomersTable =
+    -- Step 2: Apply HAVING clause equivalent (filter for count > 1)
+    FILTER(
+        CustomersWithComplaintCounts,
+        [TotalComplaints] > 1
+    )
+
+RETURN
+    -- Step 3: Count resulting customers with repeat complaints
+    COUNTROWS(RepeatCustomersTable)
+
+-- Measure: % of Customers with Repeat Complaints
+-- Purpose: Calculate percentage of customer base with multiple complaints
+-- Business Context: Key churn indicator - repeat complainers have higher churn probability
+-- Returns: Decimal (0 to 1), formatted as percentage
+-- Dependencies: [Repeat Complaints Customers], [Customers Base]
+% of Customers with Repeat Complaints = 
+DIVIDE(
+    [Repeat Complaints Customers], 
+    [Customers Base], 
+    0
+)
+
+-- ========================================================================
+-- SECTION 5: AGENT PERFORMANCE METRICS
+-- ========================================================================
+-- Purpose: Monitor agent workload, efficiency, and backlog management
+
+-- Measure: Agents With Backlog (%)
+-- Purpose: Calculate percentage of agents with open complaints
+-- Business Context: Identifies workload distribution issues and capacity constraints
+-- Returns: Decimal (0 to 1), formatted as percentage
+-- Logic: 
+--   - Counts distinct agents with at least one open complaint
+--   - Divides by total distinct agents in system
+--   - Returns BLANK if no agents exist (prevents division by zero)
+Agents With Backlog (%) = 
+VAR TotalAgents =
+    DISTINCTCOUNT('customer_intelligence'[agent_name])
+
+VAR AgentsWithBacklog =
+    CALCULATE(
+        DISTINCTCOUNT('customer_intelligence'[agent_name]),
+        'customer_intelligence'[resolution_status] = "Open",
+        'customer_intelligence'[complaint_date] <= TODAY()
+    )
+
+RETURN
+    IF(
+        TotalAgents = 0,
+        BLANK(),
+        DIVIDE(AgentsWithBacklog, TotalAgents, 0)
+    )
+
+-- ========================================================================
+-- MEASURE DEPENDENCIES SUMMARY
+-- ========================================================================
+-- This section documents which measures depend on other measures
+-- Useful for troubleshooting and understanding calculation order
+
+-- Base Measures (no dependencies):
+--   - Total Complaints
+--   - High/Medium/Low Urgency Complaints
+--   - Resolved Complaints
+--   - Unresolved Complaints
+--   - High-Risk Customers
+--   - New Customers
+--   - Customers Base
+--   - Customers who complained
+--   - Repeat Complaints Customers
+--   - Average Resolution Time
+--   - Agents With Backlog (%)
+
+-- Derived Measures (depend on base measures):
+--   - % High-Urgency Complaints → [High Urgency Complaints], [Total Complaints]
+--   - Resolution Rate % → [Resolved Complaints], [Total Complaints]
+--   - % of Customer Base At Risk → [High-Risk Customers], [Total Complaints]
+--   - Complaint Rate → [Customers who complained], [Customers Base]
+--   - % of Customers with Repeat Complaints → [Repeat Complaints Customers], [Customers Base]
+
+-- ========================================================================
+-- USAGE NOTES
+-- ========================================================================
+-- 1. All measures include date validation (signup_date and complaint_date <= TODAY())
+--    to prevent future-dated records from affecting calculations
+--
+-- 2. DIVIDE function uses 0 as third parameter to return 0 instead of error
+--    when denominator is 0 (prevents visual errors in dashboard)
+--
+-- 3. DISTINCTCOUNT vs COUNT vs COUNTROWS:
+--    - DISTINCTCOUNT: Used for complaint_id and customer_id (prevents double-counting)
+--    - COUNT: Used for customer_risk table (no duplicates expected)
+--    - COUNTROWS: Used for resolved complaints (counting rows, not specific column)
+--
+-- 4. NOT(ISBLANK(...)) filters are defensive programming to handle data quality issues
+--    Ensures calculations only include records with valid, non-null values
+--
+-- 5. Resolution time filtering (> 0) implicitly handles NULL values since
+--    NULL is not greater than 0 in DAX logic
+--
+-- 6. customer_risk table is dynamically populated by SQL view and may contain
+--    0 rows if no customers currently meet the risk threshold (risk_score > 0.5)
+--
+-- ========================================================================
+-- END OF DAX MEASURES LIBRARY
+-- ========================================================================
